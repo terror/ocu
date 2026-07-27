@@ -1,6 +1,3 @@
-#[allow(unused_imports)]
-use super::*;
-
 pub(crate) struct Model {
   pub(crate) cost: f64,
   pub(crate) input_tokens: i64,
