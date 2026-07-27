@@ -27,7 +27,10 @@ impl Storage {
             COUNT(*),
             COALESCE(SUM(json_extract(data, '$.cost')), 0.0),
             COALESCE(SUM(json_extract(data, '$.tokens.input')), 0),
-            COALESCE(SUM(json_extract(data, '$.tokens.output')), 0)
+            COALESCE(SUM(json_extract(data, '$.tokens.output')), 0),
+            COALESCE(SUM(json_extract(data, '$.tokens.reasoning')), 0),
+            COALESCE(SUM(json_extract(data, '$.tokens.cache.read')), 0),
+            COALESCE(SUM(json_extract(data, '$.tokens.cache.write')), 0)
           FROM message
           WHERE json_extract(data, '$.role') = 'assistant'
             AND session_id IN (
@@ -44,12 +47,17 @@ impl Storage {
 
     statement
       .query_map(params![filter.cutoff, filter.project], |row| {
+        let cost = row.get::<_, f64>(2)?;
+
         Ok(Model {
-          name: row.get(0)?,
-          messages: row.get(1)?,
-          cost: row.get(2)?,
+          cache_read_tokens: row.get(6)?,
+          cache_write_tokens: row.get(7)?,
+          cost: (cost > 0.0).then_some(cost),
           input_tokens: row.get(3)?,
+          messages: row.get(1)?,
+          name: row.get(0)?,
           output_tokens: row.get(4)?,
+          reasoning_tokens: row.get(5)?,
         })
       })
       .context("could not read OpenCode model usage")?

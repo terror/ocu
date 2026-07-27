@@ -6,6 +6,8 @@ use {
   crossterm::event::{self, Event, KeyCode, KeyEventKind},
   filter::Filter,
   model::Model,
+  models::Models,
+  price::Price,
   ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
@@ -13,7 +15,10 @@ use {
     widgets::{Cell, Paragraph, Row, Table, Wrap},
   },
   rusqlite::{Connection, OpenFlags, params},
+  serde::Deserialize,
   std::{
+    cmp::Ordering,
+    collections::HashMap,
     env,
     path::PathBuf,
     process,
@@ -27,8 +32,20 @@ mod app;
 mod arguments;
 mod filter;
 mod model;
+mod models;
+mod price;
 mod storage;
 mod usage;
+
+fn format_cost(cost: Option<f64>, partial: bool) -> String {
+  let Some(cost) = cost else {
+    return "n/a".into();
+  };
+
+  let partial = if partial { "+" } else { "" };
+
+  format!("${cost:.2}{partial}")
+}
 
 fn format_number(value: i64) -> String {
   let digits = value.to_string();

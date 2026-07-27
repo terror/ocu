@@ -19,6 +19,7 @@ impl App {
           KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
           KeyCode::Char('r') => {
             self.usage = self.storage.usage(&self.filter)?;
+            self.usage.estimate(&Models::fetch().unwrap_or_default());
           }
           _ => {}
         }
@@ -27,7 +28,9 @@ impl App {
   }
 
   pub(crate) fn new(storage: Storage, filter: Filter) -> Result<Self> {
-    let usage = storage.usage(&filter)?;
+    let mut usage = storage.usage(&filter)?;
+
+    usage.estimate(&Models::fetch().unwrap_or_default());
 
     Ok(Self {
       filter,
@@ -57,7 +60,10 @@ impl App {
 
     let cells = [
       format!("{}\nSESSIONS", format_number(self.usage.sessions)),
-      format!("${:.2}\nCOST", self.usage.cost),
+      format!(
+        "{}\nCOST",
+        format_cost(Some(self.usage.cost()), self.usage.unpriced())
+      ),
       format!("{}\nTOKENS", format_number(self.usage.total_tokens())),
       format!("{}\nASSISTANT MESSAGES", format_number(self.usage.messages)),
     ];
@@ -86,7 +92,7 @@ impl App {
       Row::new([
         Cell::from(model.name.clone()),
         Cell::from(format_number(model.messages)),
-        Cell::from(format!("${:.2}", model.cost)),
+        Cell::from(format_cost(model.cost, false)),
         Cell::from(format_number(model.input_tokens)),
         Cell::from(format_number(model.output_tokens)),
       ])
@@ -98,7 +104,7 @@ impl App {
         [
           Constraint::Fill(2),
           Constraint::Length(8),
-          Constraint::Length(10),
+          Constraint::Length(13),
           Constraint::Length(10),
           Constraint::Length(10),
         ],
