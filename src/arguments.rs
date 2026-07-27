@@ -24,6 +24,8 @@ pub(crate) struct Arguments {
     help = "Only include sessions from this project directory"
   )]
   project: Option<PathBuf>,
+  #[arg(long, help = "Refresh cached model rates")]
+  refresh: bool,
 }
 
 impl Arguments {
@@ -35,6 +37,7 @@ impl Arguments {
       (Some(_), Some(_)) => unreachable!(),
     };
 
-    App::new(storage, Filter::new(self.days, self.project)?)?.run()
+    App::new(storage, Filter::new(self.days, self.project)?, self.refresh)?
+      .run()
   }
 }

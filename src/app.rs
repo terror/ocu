@@ -19,7 +19,7 @@ impl App {
           KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
           KeyCode::Char('r') => {
             self.usage = self.storage.usage(&self.filter)?;
-            self.usage.estimate(&Models::fetch().unwrap_or_default());
+            self.usage.estimate(&Models::load(true).unwrap_or_default());
           }
           _ => {}
         }
@@ -27,10 +27,14 @@ impl App {
     }
   }
 
-  pub(crate) fn new(storage: Storage, filter: Filter) -> Result<Self> {
+  pub(crate) fn new(
+    storage: Storage,
+    filter: Filter,
+    refresh: bool,
+  ) -> Result<Self> {
     let mut usage = storage.usage(&filter)?;
 
-    usage.estimate(&Models::fetch().unwrap_or_default());
+    usage.estimate(&Models::load(refresh).unwrap_or_default());
 
     Ok(Self {
       filter,

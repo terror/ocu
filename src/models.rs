@@ -27,6 +27,15 @@ pub(crate) struct Models {
 impl Models {
   const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
+  fn cache_path() -> Option<PathBuf> {
+    env::var_os("XDG_CACHE_HOME")
+      .map(PathBuf::from)
+      .or_else(|| {
+        env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache"))
+      })
+      .map(|cache_home| cache_home.join("ocu").join("models.json"))
+  }
+
   pub(crate) fn estimate(&self, model: &Model) -> Option<f64> {
     self
       .pricing
@@ -34,7 +43,7 @@ impl Models {
       .map(|price| price.estimate(model))
   }
 
-  pub(crate) fn fetch() -> Result<Self> {
+  fn fetch() -> Result<String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
       .timeout_global(Some(Duration::from_secs(5)))
       .build()
@@ -48,7 +57,26 @@ impl Models {
       .read_to_string()
       .context("could not read current model prices")?;
 
-    Self::parse(&body)
+    Ok(body)
+  }
+
+  pub(crate) fn load(refresh: bool) -> Result<Self> {
+    let cache = Self::cache_path();
+
+    if !refresh
+      && let Some(cache) = cache.as_deref()
+      && let Some(models) = Self::read_cache(cache)
+    {
+      return Ok(models);
+    }
+
+    let input = Self::fetch()?;
+
+    if let Some(cache) = cache.as_deref() {
+      Self::write_cache(cache, &input);
+    }
+
+    Self::parse(&input)
   }
 
   fn parse(input: &str) -> Result<Self> {
@@ -80,6 +108,24 @@ impl Models {
     }
 
     Ok(Self { pricing })
+  }
+
+  fn read_cache(path: &Path) -> Option<Self> {
+    fs::read_to_string(path)
+      .ok()
+      .and_then(|input| Self::parse(&input).ok())
+  }
+
+  fn write_cache(path: &Path, input: &str) {
+    let Some(parent) = path.parent() else {
+      return;
+    };
+
+    if fs::create_dir_all(parent).is_err() {
+      return;
+    }
+
+    drop(fs::write(path, input));
   }
 }
 
@@ -124,5 +170,46 @@ mod tests {
     model.estimate(&models);
 
     assert!((model.cost.unwrap() - 6.25).abs() < f64::EPSILON);
+  }
+
+  #[test]
+  fn reads_cached_model_prices() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("models.json");
+
+    Models::write_cache(
+      &path,
+      r#"
+        {
+          "openai": {
+            "models": {
+              "foo": {
+                "id": "foo",
+                "cost": {
+                  "input": 1,
+                  "output": 2
+                }
+              }
+            }
+          }
+        }
+      "#,
+    );
+
+    let models = Models::read_cache(&path).unwrap();
+    let mut model = Model {
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      cost: None,
+      input_tokens: 1_000_000,
+      messages: 0,
+      name: "openai/foo".into(),
+      output_tokens: 0,
+      reasoning_tokens: 0,
+    };
+
+    model.estimate(&models);
+
+    assert_eq!(model.cost, Some(1.0));
   }
 }

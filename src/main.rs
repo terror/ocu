@@ -19,8 +19,8 @@ use {
   std::{
     cmp::Ordering,
     collections::HashMap,
-    env,
-    path::PathBuf,
+    env, fs,
+    path::{Path, PathBuf},
     process,
     time::{Duration, SystemTime, UNIX_EPOCH},
   },
