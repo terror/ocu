@@ -14,9 +14,10 @@ use {
   price::Price,
   ratatui::{
     DefaultTerminal, Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    widgets::{Cell, Paragraph, Row, Table, Wrap},
+    text::{Line, Span},
+    widgets::{Cell, Paragraph, Row, Table},
   },
   rusqlite::{Connection, OpenFlags, params},
   serde::Deserialize,

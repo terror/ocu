@@ -145,19 +145,29 @@ impl App {
       ])
       .split(area);
 
-    frame.render_widget(Paragraph::new("ocu"), rows[0]);
+    let header = Layout::default()
+      .direction(Direction::Horizontal)
+      .constraints([Constraint::Min(10), Constraint::Length(18)])
+      .split(rows[0]);
+
+    frame.render_widget(
+      Paragraph::new(Line::from(vec![Span::styled(
+        "ocu",
+        Style::default()
+          .fg(Color::Cyan)
+          .add_modifier(Modifier::BOLD),
+      )])),
+      header[0],
+    );
 
     let cells = [
-      format!("{}\nSESSIONS", format_number(self.state.usage.sessions)),
-      format!(
-        "{}\nCOST",
-        format_cost(Some(self.state.usage.cost()), self.state.usage.unpriced())
+      ("SESSIONS", format_number(self.state.usage.sessions)),
+      (
+        "COST",
+        format_cost(Some(self.state.usage.cost()), self.state.usage.unpriced()),
       ),
-      format!("{}\nTOKENS", format_number(self.state.usage.total_tokens())),
-      format!(
-        "{}\nASSISTANT MESSAGES",
-        format_number(self.state.usage.messages)
-      ),
+      ("TOKENS", format_number(self.state.usage.total_tokens())),
+      ("MESSAGES", format_number(self.state.usage.messages)),
     ];
 
     let columns = Layout::default()
@@ -167,26 +177,38 @@ impl App {
 
     for (area, cell) in columns.iter().zip(cells) {
       frame.render_widget(
-        Paragraph::new(cell)
-          .style(Style::default().fg(Color::Cyan))
-          .wrap(Wrap { trim: true }),
+        Paragraph::new(vec![
+          Line::from(cell.0).style(Style::default().fg(Color::DarkGray)),
+          Line::from(cell.1).style(Style::default().fg(Color::Cyan)),
+        ])
+        .alignment(Alignment::Center),
         *area,
       );
     }
 
-    let header = Row::new(["MODEL", "CALLS", "COST", "INPUT", "OUTPUT"]).style(
-      Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD),
-    );
+    let header = Row::new([
+      Cell::from("MODEL"),
+      Cell::from(Line::from("CALLS").right_aligned()),
+      Cell::from(Line::from("COST").right_aligned()),
+      Cell::from(Line::from("INPUT").right_aligned()),
+      Cell::from(Line::from("OUTPUT").right_aligned()),
+    ])
+    .style(Style::default().fg(Color::DarkGray))
+    .bottom_margin(1);
 
     let models = self.state.usage.models.iter().map(|model| {
       Row::new([
-        Cell::from(model.name.clone()),
-        Cell::from(format_number(model.messages)),
-        Cell::from(format_cost(model.cost, false)),
-        Cell::from(format_number(model.input_tokens)),
-        Cell::from(format_number(model.output_tokens)),
+        Cell::from(model.name.clone())
+          .style(Style::default().add_modifier(Modifier::BOLD)),
+        Cell::from(Line::from(format_number(model.messages)).right_aligned()),
+        Cell::from(Line::from(format_cost(model.cost, false)).right_aligned())
+          .style(Style::default().fg(Color::Cyan)),
+        Cell::from(
+          Line::from(format_number(model.input_tokens)).right_aligned(),
+        ),
+        Cell::from(
+          Line::from(format_number(model.output_tokens)).right_aligned(),
+        ),
       ])
     });
 
@@ -207,18 +229,29 @@ impl App {
     );
 
     let (status, color) = match &self.state.status {
-      Status::Failed { message } => (
-        format!("Refresh failed: {message} • r retry • q/esc quit"),
-        Color::Red,
-      ),
-      Status::Idle => ("r refresh • q/esc quit".into(), Color::DarkGray),
-      Status::Loading => ("Refreshing...".into(), Color::Yellow),
-      Status::Succeeded { .. } => ("Refreshed".into(), Color::Green),
+      Status::Failed { message } => {
+        (format!("refresh failed: {message}"), Color::Red)
+      }
+      Status::Idle => ("ready".into(), Color::DarkGray),
+      Status::Loading => ("refreshing...".into(), Color::Yellow),
+      Status::Succeeded { .. } => ("refreshed".into(), Color::Green),
     };
+
+    let footer = Layout::default()
+      .direction(Direction::Horizontal)
+      .constraints([Constraint::Min(10), Constraint::Length(20)])
+      .split(rows[6]);
 
     frame.render_widget(
       Paragraph::new(status).style(Style::default().fg(color)),
-      rows[6],
+      footer[0],
+    );
+
+    frame.render_widget(
+      Paragraph::new("r refresh | q quit")
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Right),
+      footer[1],
     );
   }
 
