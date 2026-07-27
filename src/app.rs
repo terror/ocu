@@ -1,31 +1,83 @@
 use super::*;
 
 pub(crate) struct App {
+  event_receiver: Receiver<Event>,
+  event_sender: Sender<Event>,
   options: Options,
-  refresh: Option<Receiver<Result<Usage>>>,
-  status: Status,
+  state: State,
   storage: Storage,
-  usage: Usage,
 }
 
 impl App {
-  fn event_loop(&mut self, terminal: &mut DefaultTerminal) -> Result {
-    loop {
-      self.update_status();
+  const TICK_INTERVAL: Duration = Duration::from_millis(250);
 
+  fn drain_pending_events(&mut self) {
+    while let Ok(event) = self.event_receiver.try_recv() {
+      self.handle_event(event);
+    }
+  }
+
+  fn event_loop(&mut self, terminal: &mut DefaultTerminal) -> Result {
+    while !self.state.should_quit {
       terminal.draw(|frame| self.render(frame))?;
 
-      if event::poll(Duration::from_millis(250))?
-        && let Event::Key(key) = event::read()?
-        && key.kind == KeyEventKind::Press
-      {
-        match key.code {
-          KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-          KeyCode::Char('r') => self.refresh()?,
-          _ => {}
+      let event = match self.event_receiver.recv_timeout(Self::TICK_INTERVAL) {
+        Ok(event) => event,
+        Err(RecvTimeoutError::Timeout) => Event::Tick,
+        Err(RecvTimeoutError::Disconnected) => return Ok(()),
+      };
+
+      self.handle_event(event);
+      self.drain_pending_events();
+    }
+
+    Ok(())
+  }
+
+  fn handle_effect(&mut self, effect: Effect) {
+    match effect {
+      Effect::Refresh => self.refresh(),
+    }
+  }
+
+  fn handle_event(&mut self, event: Event) {
+    for effect in self.state.handle_event(event) {
+      self.handle_effect(effect);
+    }
+  }
+
+  fn listen_for_input(&self) {
+    let sender = self.event_sender.clone();
+
+    thread::spawn(move || {
+      loop {
+        let event = match crossterm_event::read() {
+          Ok(event) => event,
+          Err(error) => {
+            drop(sender.send(Event::Error(error.to_string())));
+            return;
+          }
+        };
+
+        let crossterm_event::Event::Key(key) = event else {
+          continue;
+        };
+
+        if key.kind != KeyEventKind::Press {
+          continue;
+        }
+
+        let action = match key.code {
+          KeyCode::Char('q') | KeyCode::Esc => Action::Quit,
+          KeyCode::Char('r') => Action::Refresh,
+          _ => continue,
+        };
+
+        if sender.send(Event::Action(action)).is_err() {
+          return;
         }
       }
-    }
+    });
   }
 
   pub(crate) fn new(storage: Storage, options: Options) -> Result<Self> {
@@ -41,24 +93,29 @@ impl App {
       },
     };
 
+    let (event_sender, event_receiver) = mpsc::channel();
+
     Ok(Self {
+      event_receiver,
+      event_sender,
       options,
-      refresh: None,
-      status,
+      state: State::new(usage, status),
       storage,
-      usage,
     })
   }
 
-  fn refresh(&mut self) -> Result {
-    if matches!(self.status, Status::Loading) {
-      return Ok(());
-    }
+  fn refresh(&self) {
+    let filter = match Filter::new(&self.options) {
+      Ok(filter) => filter,
+      Err(error) => {
+        drop(self.event_sender.send(Event::Refresh(Err(error))));
+        return;
+      }
+    };
 
-    let filter = Filter::new(&self.options)?;
+    let sender = self.event_sender.clone();
+
     let storage = self.storage.clone();
-
-    let (sender, receiver) = mpsc::sync_channel(1);
 
     thread::spawn(move || {
       let result = (|| {
@@ -67,13 +124,8 @@ impl App {
         Ok(usage)
       })();
 
-      drop(sender.send(result));
+      drop(sender.send(Event::Refresh(result)));
     });
-
-    self.refresh = Some(receiver);
-    self.status = Status::Loading;
-
-    Ok(())
   }
 
   fn render(&self, frame: &mut Frame) {
@@ -96,13 +148,16 @@ impl App {
     frame.render_widget(Paragraph::new("ocu"), rows[0]);
 
     let cells = [
-      format!("{}\nSESSIONS", format_number(self.usage.sessions)),
+      format!("{}\nSESSIONS", format_number(self.state.usage.sessions)),
       format!(
         "{}\nCOST",
-        format_cost(Some(self.usage.cost()), self.usage.unpriced())
+        format_cost(Some(self.state.usage.cost()), self.state.usage.unpriced())
       ),
-      format!("{}\nTOKENS", format_number(self.usage.total_tokens())),
-      format!("{}\nASSISTANT MESSAGES", format_number(self.usage.messages)),
+      format!("{}\nTOKENS", format_number(self.state.usage.total_tokens())),
+      format!(
+        "{}\nASSISTANT MESSAGES",
+        format_number(self.state.usage.messages)
+      ),
     ];
 
     let columns = Layout::default()
@@ -125,7 +180,7 @@ impl App {
         .add_modifier(Modifier::BOLD),
     );
 
-    let models = self.usage.models.iter().map(|model| {
+    let models = self.state.usage.models.iter().map(|model| {
       Row::new([
         Cell::from(model.name.clone()),
         Cell::from(format_number(model.messages)),
@@ -151,7 +206,7 @@ impl App {
       rows[4],
     );
 
-    let (status, color) = match &self.status {
+    let (status, color) = match &self.state.status {
       Status::Failed { message } => (
         format!("Refresh failed: {message} • r retry • q/esc quit"),
         Color::Red,
@@ -169,88 +224,13 @@ impl App {
 
   pub(crate) fn run(mut self) -> Result {
     let mut terminal = ratatui::init();
+
+    self.listen_for_input();
+
     let result = self.event_loop(&mut terminal);
+
     ratatui::restore();
+
     result
-  }
-
-  fn update_status(&mut self) {
-    let result = self.refresh.as_ref().map(Receiver::try_recv);
-
-    match result {
-      Some(Ok(Ok(usage))) => {
-        self.usage = usage;
-        self.refresh = None;
-        self.status = Status::Succeeded { at: Instant::now() };
-      }
-      Some(Ok(Err(error))) => {
-        self.refresh = None;
-
-        self.status = Status::Failed {
-          message: error.to_string(),
-        };
-      }
-      Some(Err(TryRecvError::Empty)) | None => {}
-      Some(Err(TryRecvError::Disconnected)) => {
-        self.refresh = None;
-
-        self.status = Status::Failed {
-          message: "could not refresh usage".into(),
-        };
-      }
-    }
-
-    if let Status::Succeeded { at } = &self.status
-      && at.elapsed() >= Duration::from_secs(1)
-    {
-      self.status = Status::Idle;
-    }
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn failed_refresh_preserves_usage() {
-    let (sender, receiver) = mpsc::sync_channel::<Result<Usage>>(1);
-
-    sender.send(Err(anyhow::anyhow!("foo"))).unwrap();
-
-    let mut app = App {
-      options: Options {
-        data_dir: None,
-        database: None,
-        days: None,
-        project: None,
-        refresh: false,
-      },
-      refresh: Some(receiver),
-      status: Status::Loading,
-      storage: Storage::new(PathBuf::from("foo")),
-      usage: Usage {
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-        cost: 0.0,
-        input_tokens: 0,
-        messages: 0,
-        models: vec![],
-        output_tokens: 0,
-        reasoning_tokens: 0,
-        sessions: 1,
-      },
-    };
-
-    app.update_status();
-
-    assert_eq!(app.usage.sessions, 1);
-
-    assert!(matches!(
-      app.status,
-      Status::Failed { ref message } if message == "foo"
-    ));
-
-    assert!(app.refresh.is_none());
   }
 }

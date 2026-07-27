@@ -1,9 +1,12 @@
 use {
+  action::Action,
   anyhow::Context,
   app::App,
   arguments::Arguments,
   clap::{Args, Parser},
-  crossterm::event::{self, Event, KeyCode, KeyEventKind},
+  crossterm::event::{self as crossterm_event, KeyCode, KeyEventKind},
+  effect::Effect,
+  event::Event,
   filter::Filter,
   model::Model,
   models::Models,
@@ -17,6 +20,7 @@ use {
   },
   rusqlite::{Connection, OpenFlags, params},
   serde::Deserialize,
+  state::State,
   status::Status,
   std::{
     cmp::Ordering,
@@ -24,7 +28,7 @@ use {
     env, fs,
     path::{Path, PathBuf},
     process,
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
   },
@@ -32,13 +36,17 @@ use {
   usage::Usage,
 };
 
+mod action;
 mod app;
 mod arguments;
+mod effect;
+mod event;
 mod filter;
 mod model;
 mod models;
 mod options;
 mod price;
+mod state;
 mod status;
 mod storage;
 mod usage;
