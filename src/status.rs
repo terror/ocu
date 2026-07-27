@@ -1,7 +1,8 @@
 use super::*;
 
 pub(crate) enum Status {
-  Controls,
+  Failed { message: String },
+  Idle,
   Loading,
-  Success(Instant),
+  Succeeded { at: Instant },
 }

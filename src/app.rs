@@ -11,7 +11,7 @@ pub(crate) struct App {
 impl App {
   fn event_loop(&mut self, terminal: &mut DefaultTerminal) -> Result {
     loop {
-      self.update_status()?;
+      self.update_status();
 
       terminal.draw(|frame| self.render(frame))?;
 
@@ -31,24 +31,33 @@ impl App {
   pub(crate) fn new(storage: Storage, options: Options) -> Result<Self> {
     let mut usage = storage.usage(&Filter::new(&options)?)?;
 
-    usage.estimate(&Models::load(options.refresh).unwrap_or_default());
+    let status = match Models::load(options.refresh) {
+      Ok(models) => {
+        usage.estimate(&models);
+        Status::Idle
+      }
+      Err(error) => Status::Failed {
+        message: error.to_string(),
+      },
+    };
 
     Ok(Self {
       options,
       refresh: None,
-      status: Status::Controls,
+      status,
       storage,
       usage,
     })
   }
 
   fn refresh(&mut self) -> Result {
-    if !matches!(self.status, Status::Controls) {
+    if matches!(self.status, Status::Loading) {
       return Ok(());
     }
 
     let filter = Filter::new(&self.options)?;
     let storage = self.storage.clone();
+
     let (sender, receiver) = mpsc::sync_channel(1);
 
     thread::spawn(move || {
@@ -143,9 +152,13 @@ impl App {
     );
 
     let (status, color) = match &self.status {
-      Status::Controls => ("r refresh • q/esc quit", Color::DarkGray),
-      Status::Loading => ("Refreshing...", Color::Yellow),
-      Status::Success(_) => ("Refreshed", Color::Green),
+      Status::Failed { message } => (
+        format!("Refresh failed: {message} • r retry • q/esc quit"),
+        Color::Red,
+      ),
+      Status::Idle => ("r refresh • q/esc quit".into(), Color::DarkGray),
+      Status::Loading => ("Refreshing...".into(), Color::Yellow),
+      Status::Succeeded { .. } => ("Refreshed".into(), Color::Green),
     };
 
     frame.render_widget(
@@ -161,27 +174,83 @@ impl App {
     result
   }
 
-  fn update_status(&mut self) -> Result {
+  fn update_status(&mut self) {
     let result = self.refresh.as_ref().map(Receiver::try_recv);
 
     match result {
-      Some(Ok(usage)) => {
-        self.usage = usage?;
+      Some(Ok(Ok(usage))) => {
+        self.usage = usage;
         self.refresh = None;
-        self.status = Status::Success(Instant::now());
+        self.status = Status::Succeeded { at: Instant::now() };
+      }
+      Some(Ok(Err(error))) => {
+        self.refresh = None;
+
+        self.status = Status::Failed {
+          message: error.to_string(),
+        };
       }
       Some(Err(TryRecvError::Empty)) | None => {}
       Some(Err(TryRecvError::Disconnected)) => {
-        return Err(anyhow::anyhow!("could not refresh usage"));
+        self.refresh = None;
+
+        self.status = Status::Failed {
+          message: "could not refresh usage".into(),
+        };
       }
     }
 
-    if let Status::Success(time) = &self.status
-      && time.elapsed() >= Duration::from_secs(1)
+    if let Status::Succeeded { at } = &self.status
+      && at.elapsed() >= Duration::from_secs(1)
     {
-      self.status = Status::Controls;
+      self.status = Status::Idle;
     }
+  }
+}
 
-    Ok(())
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn failed_refresh_preserves_usage() {
+    let (sender, receiver) = mpsc::sync_channel::<Result<Usage>>(1);
+
+    sender.send(Err(anyhow::anyhow!("foo"))).unwrap();
+
+    let mut app = App {
+      options: Options {
+        data_dir: None,
+        database: None,
+        days: None,
+        project: None,
+        refresh: false,
+      },
+      refresh: Some(receiver),
+      status: Status::Loading,
+      storage: Storage::new(PathBuf::from("foo")),
+      usage: Usage {
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        cost: 0.0,
+        input_tokens: 0,
+        messages: 0,
+        models: vec![],
+        output_tokens: 0,
+        reasoning_tokens: 0,
+        sessions: 1,
+      },
+    };
+
+    app.update_status();
+
+    assert_eq!(app.usage.sessions, 1);
+
+    assert!(matches!(
+      app.status,
+      Status::Failed { ref message } if message == "foo"
+    ));
+
+    assert!(app.refresh.is_none());
   }
 }
