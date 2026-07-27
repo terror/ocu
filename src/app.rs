@@ -2,6 +2,8 @@ use super::*;
 
 pub(crate) struct App {
   options: Options,
+  refresh: Option<Receiver<Result<Usage>>>,
+  status: Status,
   storage: Storage,
   usage: Usage,
 }
@@ -9,6 +11,8 @@ pub(crate) struct App {
 impl App {
   fn event_loop(&mut self, terminal: &mut DefaultTerminal) -> Result {
     loop {
+      self.update_status()?;
+
       terminal.draw(|frame| self.render(frame))?;
 
       if event::poll(Duration::from_millis(250))?
@@ -17,10 +21,7 @@ impl App {
       {
         match key.code {
           KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-          KeyCode::Char('r') => {
-            self.usage = self.storage.usage(&Filter::new(&self.options)?)?;
-            self.usage.estimate(&Models::load(true).unwrap_or_default());
-          }
+          KeyCode::Char('r') => self.refresh()?,
           _ => {}
         }
       }
@@ -34,9 +35,36 @@ impl App {
 
     Ok(Self {
       options,
+      refresh: None,
+      status: Status::Controls,
       storage,
       usage,
     })
+  }
+
+  fn refresh(&mut self) -> Result {
+    if !matches!(self.status, Status::Controls) {
+      return Ok(());
+    }
+
+    let filter = Filter::new(&self.options)?;
+    let storage = self.storage.clone();
+    let (sender, receiver) = mpsc::sync_channel(1);
+
+    thread::spawn(move || {
+      let result = (|| {
+        let mut usage = storage.usage(&filter)?;
+        usage.estimate(&Models::load(true).unwrap_or_default());
+        Ok(usage)
+      })();
+
+      drop(sender.send(result));
+    });
+
+    self.refresh = Some(receiver);
+    self.status = Status::Loading;
+
+    Ok(())
   }
 
   fn render(&self, frame: &mut Frame) {
@@ -114,9 +142,14 @@ impl App {
       rows[4],
     );
 
+    let (status, color) = match &self.status {
+      Status::Controls => ("r refresh • q/esc quit", Color::DarkGray),
+      Status::Loading => ("Refreshing...", Color::Yellow),
+      Status::Success(_) => ("Refreshed", Color::Green),
+    };
+
     frame.render_widget(
-      Paragraph::new("r refresh • q/esc quit")
-        .style(Style::default().fg(Color::DarkGray)),
+      Paragraph::new(status).style(Style::default().fg(color)),
       rows[6],
     );
   }
@@ -126,5 +159,29 @@ impl App {
     let result = self.event_loop(&mut terminal);
     ratatui::restore();
     result
+  }
+
+  fn update_status(&mut self) -> Result {
+    let result = self.refresh.as_ref().map(Receiver::try_recv);
+
+    match result {
+      Some(Ok(usage)) => {
+        self.usage = usage?;
+        self.refresh = None;
+        self.status = Status::Success(Instant::now());
+      }
+      Some(Err(TryRecvError::Empty)) | None => {}
+      Some(Err(TryRecvError::Disconnected)) => {
+        return Err(anyhow::anyhow!("could not refresh usage"));
+      }
+    }
+
+    if let Status::Success(time) = &self.status
+      && time.elapsed() >= Duration::from_secs(1)
+    {
+      self.status = Status::Controls;
+    }
+
+    Ok(())
   }
 }

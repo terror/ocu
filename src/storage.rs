@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Clone)]
 pub(crate) struct Storage {
   database: PathBuf,
 }

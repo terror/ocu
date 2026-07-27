@@ -17,13 +17,16 @@ use {
   },
   rusqlite::{Connection, OpenFlags, params},
   serde::Deserialize,
+  status::Status,
   std::{
     cmp::Ordering,
     collections::HashMap,
     env, fs,
     path::{Path, PathBuf},
     process,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::mpsc::{self, Receiver, TryRecvError},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
   },
   storage::Storage,
   usage::Usage,
@@ -36,6 +39,7 @@ mod model;
 mod models;
 mod options;
 mod price;
+mod status;
 mod storage;
 mod usage;
 
