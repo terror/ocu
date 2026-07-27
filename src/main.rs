@@ -10,8 +10,7 @@ use {
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
+    widgets::{Cell, Paragraph, Row, Table, Wrap},
   },
   rusqlite::{Connection, OpenFlags, params},
   std::{

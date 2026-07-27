@@ -6,15 +6,6 @@ pub(crate) struct Filter {
 }
 
 impl Filter {
-  pub(crate) fn description(&self) -> String {
-    match (&self.cutoff, &self.project) {
-      (Some(_), Some(project)) => format!("recent project: {project}"),
-      (Some(_), None) => "recent sessions".into(),
-      (None, Some(project)) => format!("project: {project}"),
-      (None, None) => "all sessions".into(),
-    }
-  }
-
   pub(crate) fn new(
     days: Option<u64>,
     project: Option<PathBuf>,

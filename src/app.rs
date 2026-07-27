@@ -43,24 +43,17 @@ impl App {
       .direction(Direction::Vertical)
       .margin(1)
       .constraints([
-        Constraint::Length(3),
-        Constraint::Length(5),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Length(1),
         Constraint::Min(10),
+        Constraint::Length(1),
         Constraint::Length(1),
       ])
       .split(area);
 
-    let filter = self.filter.description();
-
-    let title = Line::from(vec![
-      " OpenCode usage".into(),
-      Span::styled(format!("  {filter}"), Style::default().fg(Color::DarkGray)),
-    ]);
-
-    frame.render_widget(
-      Paragraph::new(title).block(Block::default().borders(Borders::ALL)),
-      rows[0],
-    );
+    frame.render_widget(Paragraph::new("ocu"), rows[0]);
 
     let cells = [
       format!("{}\nSESSIONS", format_number(self.usage.sessions)),
@@ -72,12 +65,11 @@ impl App {
     let columns = Layout::default()
       .direction(Direction::Horizontal)
       .constraints(vec![Constraint::Ratio(1, 4); cells.len()])
-      .split(rows[1]);
+      .split(rows[2]);
 
     for (area, cell) in columns.iter().zip(cells) {
       frame.render_widget(
         Paragraph::new(cell)
-          .block(Block::default().borders(Borders::ALL))
           .style(Style::default().fg(Color::Cyan))
           .wrap(Wrap { trim: true }),
         *area,
@@ -112,12 +104,15 @@ impl App {
         ],
       )
       .header(header)
-      .block(Block::default().title("Models").borders(Borders::ALL))
       .column_spacing(1),
-      rows[2],
+      rows[4],
     );
 
-    frame.render_widget(Paragraph::new("q/Esc quit   r refresh"), rows[3]);
+    frame.render_widget(
+      Paragraph::new("r refresh • q/esc quit")
+        .style(Style::default().fg(Color::DarkGray)),
+      rows[6],
+    );
   }
 
   pub(crate) fn run(mut self) -> Result {
