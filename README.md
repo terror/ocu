@@ -1,3 +1,3 @@
 ## ocu
 
-A usage monitor for opencode
+`ocu` is a terminal dashboard for local [OpenCode](https://opencode.ai/) usage.
