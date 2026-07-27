@@ -2,11 +2,12 @@ use {
   anyhow::Context,
   app::App,
   arguments::Arguments,
-  clap::Parser,
+  clap::{Args, Parser},
   crossterm::event::{self, Event, KeyCode, KeyEventKind},
   filter::Filter,
   model::Model,
   models::Models,
+  options::Options,
   price::Price,
   ratatui::{
     DefaultTerminal, Frame,
@@ -33,6 +34,7 @@ mod arguments;
 mod filter;
 mod model;
 mod models;
+mod options;
 mod price;
 mod storage;
 mod usage;

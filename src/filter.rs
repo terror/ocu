@@ -6,15 +6,14 @@ pub(crate) struct Filter {
 }
 
 impl Filter {
-  pub(crate) fn new(
-    days: Option<u64>,
-    project: Option<PathBuf>,
-  ) -> Result<Self> {
-    let cutoff = days
+  pub(crate) fn new(options: &Options) -> Result<Self> {
+    let cutoff = options
+      .days
       .map(|days| {
         let now = SystemTime::now()
           .duration_since(UNIX_EPOCH)
           .context("could not determine the current time")?;
+
         let elapsed =
           now.saturating_sub(Duration::from_secs(days.saturating_mul(86_400)));
 
@@ -25,7 +24,10 @@ impl Filter {
 
     Ok(Self {
       cutoff,
-      project: project.map(|path| path.to_string_lossy().into_owned()),
+      project: options
+        .project
+        .as_ref()
+        .map(|path| path.to_string_lossy().into_owned()),
     })
   }
 }

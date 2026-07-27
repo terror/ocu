@@ -1,7 +1,7 @@
 use super::*;
 
 pub(crate) struct App {
-  filter: Filter,
+  options: Options,
   storage: Storage,
   usage: Usage,
 }
@@ -18,7 +18,7 @@ impl App {
         match key.code {
           KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
           KeyCode::Char('r') => {
-            self.usage = self.storage.usage(&self.filter)?;
+            self.usage = self.storage.usage(&Filter::new(&self.options)?)?;
             self.usage.estimate(&Models::load(true).unwrap_or_default());
           }
           _ => {}
@@ -27,17 +27,13 @@ impl App {
     }
   }
 
-  pub(crate) fn new(
-    storage: Storage,
-    filter: Filter,
-    refresh: bool,
-  ) -> Result<Self> {
-    let mut usage = storage.usage(&filter)?;
+  pub(crate) fn new(storage: Storage, options: Options) -> Result<Self> {
+    let mut usage = storage.usage(&Filter::new(&options)?)?;
 
-    usage.estimate(&Models::load(refresh).unwrap_or_default());
+    usage.estimate(&Models::load(options.refresh).unwrap_or_default());
 
     Ok(Self {
-      filter,
+      options,
       storage,
       usage,
     })
