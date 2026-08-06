@@ -204,10 +204,11 @@ impl App {
         Cell::from(Line::from(format_cost(model.cost, false)).right_aligned())
           .style(Style::default().fg(Color::Cyan)),
         Cell::from(
-          Line::from(format_number(model.input_tokens)).right_aligned(),
+          Line::from(format_number(model.total_input_tokens())).right_aligned(),
         ),
         Cell::from(
-          Line::from(format_number(model.output_tokens)).right_aligned(),
+          Line::from(format_number(model.total_output_tokens()))
+            .right_aligned(),
         ),
       ])
     });
