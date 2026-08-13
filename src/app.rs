@@ -220,8 +220,8 @@ impl App {
           Constraint::Fill(2),
           Constraint::Length(8),
           Constraint::Length(13),
-          Constraint::Length(10),
-          Constraint::Length(10),
+          Constraint::Length(15),
+          Constraint::Length(15),
         ],
       )
       .header(header)

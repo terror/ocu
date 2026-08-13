@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Debug, PartialEq)]
 pub(crate) struct Usage {
   pub(crate) cache_read_tokens: i64,
   pub(crate) cache_write_tokens: i64,
